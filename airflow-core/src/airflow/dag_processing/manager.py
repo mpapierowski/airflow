@@ -110,6 +110,7 @@ class DagFileInfo:
     bundle_name: str
     bundle_path: Path | None = field(compare=False, default=None)
     bundle_version: str | None = None
+    dag_importer: str | None = None
 
     @property
     def absolute_path(self) -> Path:
@@ -433,7 +434,8 @@ class DagFileProcessorManager(LoggingMixin):
             bundle = bundles[request.bundle_name]
             files.append(
                 DagFileInfo(
-                    rel_path=Path(request.relative_fileloc), bundle_name=bundle.name, bundle_path=bundle.path
+                    rel_path=Path(request.relative_fileloc), bundle_name=bundle.name, bundle_path=bundle.path,
+                    dag_importer=bundle.dag_importer_class
                 )
             )
             session.delete(request)
@@ -477,6 +479,7 @@ class DagFileProcessorManager(LoggingMixin):
             bundle_path=bundle.path,
             bundle_name=request.bundle_name,
             bundle_version=request.bundle_version,
+            dag_importer=bundle.dag_importer_class,
         )
         self._callback_to_execute[file_info].append(request)
         self._add_files_to_queue([file_info], True)
@@ -569,7 +572,7 @@ class DagFileProcessorManager(LoggingMixin):
             self._bundle_versions[bundle.name] = version_after_refresh
 
             found_files = {
-                DagFileInfo(rel_path=p, bundle_name=bundle.name, bundle_path=bundle.path)
+                DagFileInfo(rel_path=p, bundle_name=bundle.name, bundle_path=bundle.path, dag_importer=bundle.dag_importer_class)
                 for p in self._find_files_in_bundle(bundle)
             }
 
@@ -897,6 +900,7 @@ class DagFileProcessorManager(LoggingMixin):
             id=id,
             path=dag_file.absolute_path,
             bundle_path=cast("Path", dag_file.bundle_path),
+            dag_importer=dag_file.dag_importer,
             callbacks=callback_to_execute_for_file,
             selector=self.selector,
             logger=logger,

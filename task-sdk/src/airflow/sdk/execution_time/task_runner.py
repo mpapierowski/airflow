@@ -107,6 +107,8 @@ from airflow.sdk.execution_time.context import (
 from airflow.sdk.execution_time.xcom import XCom
 from airflow.sdk.timezone import coerce_datetime
 from airflow.stats import Stats
+from airflow.utils.module_loading import import_string
+
 
 if TYPE_CHECKING:
     import jinja2
@@ -640,6 +642,7 @@ def parse(what: StartupDetails, log: Logger) -> RuntimeTaskInstance:
         include_examples=False,
         safe_mode=False,
         load_op_links=False,
+        dag_importer = import_string(bundle_instance.dag_importer_class)() if bundle_instance.dag_importer_class else None,
     )
     if TYPE_CHECKING:
         assert what.ti.dag_id

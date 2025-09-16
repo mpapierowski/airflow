@@ -64,6 +64,7 @@ from airflow.sdk.execution_time.task_runner import RuntimeTaskInstance, _send_ta
 from airflow.serialization.serialized_objects import LazyDeserializedDAG, SerializedDAG
 from airflow.stats import Stats
 from airflow.utils.file import iter_airflow_imports
+from airflow.utils.module_loading import import_string
 from airflow.utils.state import TaskInstanceState
 
 if TYPE_CHECKING:
@@ -86,6 +87,8 @@ class DagFileParseRequest(BaseModel):
     file: str
 
     bundle_path: Path
+
+    dag_importer: str | None = None
     """Passing bundle path around lets us figure out relative file path."""
 
     callback_requests: list[CallbackRequest] = Field(default_factory=list)
@@ -195,6 +198,7 @@ def _parse_file(msg: DagFileParseRequest, log: FilteringBoundLogger) -> DagFileP
         bundle_path=msg.bundle_path,
         include_examples=False,
         load_op_links=False,
+        dag_importer=import_string(msg.dag_importer)() if msg.dag_importer else None
     )
     if msg.callback_requests:
         # If the request is for callback, we shouldn't serialize the DAGs
@@ -448,6 +452,7 @@ class DagFileProcessorProcess(WatchedSubprocess):
         *,
         path: str | os.PathLike[str],
         bundle_path: Path,
+        dag_importer: str | None,
         callbacks: list[CallbackRequest],
         target: Callable[[], None] = _parse_file_entrypoint,
         client: Client,
@@ -458,7 +463,7 @@ class DagFileProcessorProcess(WatchedSubprocess):
         _pre_import_airflow_modules(os.fspath(path), logger)
 
         proc: Self = super().start(target=target, client=client, **kwargs)
-        proc._on_child_started(callbacks, path, bundle_path)
+        proc._on_child_started(callbacks, path, bundle_path, dag_importer)
         return proc
 
     def _on_child_started(
@@ -466,11 +471,13 @@ class DagFileProcessorProcess(WatchedSubprocess):
         callbacks: list[CallbackRequest],
         path: str | os.PathLike[str],
         bundle_path: Path,
+        dag_importer: str,
     ) -> None:
         msg = DagFileParseRequest(
             file=os.fspath(path),
             bundle_path=bundle_path,
             callback_requests=callbacks,
+            dag_importer=dag_importer,
         )
         self.send_msg(msg, request_id=0)
 

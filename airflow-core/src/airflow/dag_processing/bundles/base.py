@@ -40,6 +40,7 @@ from airflow.configuration import conf
 if TYPE_CHECKING:
     from pendulum import DateTime
 
+    from airflow.dag_processing.importers.dag_importer import DagImporter
     from airflow.typing_compat import Self
 
 log = logging.getLogger(__name__)
@@ -260,6 +261,7 @@ class BaseDagBundle(ABC):
         refresh_interval: int = conf.getint("dag_processor", "refresh_interval"),
         version: str | None = None,
         view_url_template: str | None = None,
+        dag_importer_class: str | None = None,
     ) -> None:
         self.name = name
         self.version = version
@@ -267,6 +269,7 @@ class BaseDagBundle(ABC):
         self.is_initialized: bool = False
 
         self.base_dir = get_bundle_base_folder(bundle_name=self.name)
+        self.dag_importer_class = dag_importer_class
         """Base directory for all bundle files for this bundle."""
 
         self.versions_dir = get_bundle_versions_base_folder(bundle_name=self.name)

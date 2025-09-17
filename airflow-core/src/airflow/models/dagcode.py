@@ -123,7 +123,7 @@ class DagCode(Base):
             test_mode = conf.getboolean("core", "unit_test_mode")
             if test_mode:
                 return "source_code"
-            raise
+            return "<external>"
 
     @classmethod
     @provide_session

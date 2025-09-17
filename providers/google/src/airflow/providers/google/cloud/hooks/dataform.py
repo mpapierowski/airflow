@@ -131,6 +131,28 @@ class DataformHook(GoogleBaseHook):
             timeout=timeout,
             metadata=metadata,
         )
+    
+    @GoogleBaseHook.fallback_to_default_project_id
+    def query_compilation_result_actions(
+        self,
+        project_id: str,
+        region: str,
+        repository_id: str,
+        compilation_result_id: str,
+        retry: Retry | _MethodDefault = DEFAULT,
+        timeout: float | None = None,
+        metadata: Sequence[tuple[str, str]] = (),
+    ):
+        client = self.get_dataform_client()
+        name = f"projects/{project_id}/locations/{region}/repositories/{repository_id}/compilationResults/{compilation_result_id}"
+        response = client.query_compilation_result_actions(
+            request={"name": name},
+            retry=retry,
+            timeout=timeout,
+            metadata=metadata,
+        )
+        return response
+
 
     @GoogleBaseHook.fallback_to_default_project_id
     def get_compilation_result(
@@ -353,6 +375,77 @@ class DataformHook(GoogleBaseHook):
         )
 
         return repository
+
+    @GoogleBaseHook.fallback_to_default_project_id
+    def list_repositories(
+        self,
+        *,
+        project_id: str,
+        region: str,
+        repository_filter: str | None = None,
+        retry: Retry | _MethodDefault = DEFAULT,
+        timeout: float | None = None,
+        metadata: Sequence[tuple[str, str]] = (),
+    ) -> Repository:
+        """
+        Create repository.
+
+        :param project_id: Required. The ID of the Google Cloud project where repository should be.
+        :param region: Required. The ID of the Google Cloud region where repository should be.
+        :param repository_id: Required. The ID of the new Dataform repository.
+        :param retry: Designation of what errors, if any, should be retried.
+        :param timeout: The timeout for this request.
+        :param metadata: Strings which should be sent along with the request as metadata.
+        """
+        client = self.get_dataform_client()
+        parent = f"projects/{project_id}/locations/{region}"
+        request = {
+            "parent": parent,
+        }
+        if repository_filter is not None:
+            request["filter"] = repository_filter
+
+
+        return client.list_repositories(
+            request=request,
+            retry=retry,
+            timeout=timeout,
+            metadata=metadata,
+        )
+
+    @GoogleBaseHook.fallback_to_default_project_id
+    def get_repository(
+        self,
+        *,
+        project_id: str,
+        region: str,
+        repository_id: str,
+        retry: Retry | _MethodDefault = DEFAULT,
+        timeout: float | None = None,
+        metadata: Sequence[tuple[str, str]] = (),
+    ) -> Repository:
+        """
+        Create repository.
+
+        :param project_id: Required. The ID of the Google Cloud project where repository should be.
+        :param region: Required. The ID of the Google Cloud region where repository should be.
+        :param repository_id: Required. The ID of the new Dataform repository.
+        :param retry: Designation of what errors, if any, should be retried.
+        :param timeout: The timeout for this request.
+        :param metadata: Strings which should be sent along with the request as metadata.
+        """
+        client = self.get_dataform_client()
+        repository_name = f"projects/{project_id}/locations/{region}/repositories/{repository_id}"
+        request = {
+            "name": repository_name,
+        }
+
+        return client.get_repository(
+            request=request,
+            retry=retry,
+            timeout=timeout,
+            metadata=metadata,
+        )
 
     @GoogleBaseHook.fallback_to_default_project_id
     def delete_repository(

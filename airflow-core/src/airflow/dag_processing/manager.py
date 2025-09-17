@@ -50,7 +50,7 @@ from airflow.api_fastapi.execution_api.app import InProcessExecutionAPI
 from airflow.configuration import conf
 from airflow.dag_processing.bundles.manager import DagBundlesManager
 from airflow.dag_processing.collection import update_dag_parsing_results_in_db
-from airflow.dag_processing.processor import DagFileParsingResult, DagFileProcessorProcess
+from airflow.dag_processing.processor import DagFileParsingResult, DagFileProcessorProcess, list_file_entrypoint
 from airflow.exceptions import AirflowException
 from airflow.models.asset import remove_references_to_deleted_dags
 from airflow.models.dag import DagModel
@@ -65,6 +65,7 @@ from airflow.stats import Stats
 from airflow.traces.tracer import DebugTrace
 from airflow.utils.file import list_py_file_paths, might_contain_dag
 from airflow.utils.log.logging_mixin import LoggingMixin
+from airflow.utils.module_loading import import_string
 from airflow.utils.net import get_hostname
 from airflow.utils.process_utils import (
     kill_child_processes_by_pids,
@@ -589,7 +590,29 @@ class DagFileProcessorManager(LoggingMixin):
         """Get relative paths for dag files from bundle dir."""
         # Build up a list of Python files that could contain DAGs
         self.log.info("Searching for files in %s at %s", bundle.name, bundle.path)
-        rel_paths = [Path(x).relative_to(bundle.path) for x in list_py_file_paths(bundle.path)]
+        id = uuid7()
+
+        logger, logger_filehandle = self._get_logger_for_dag_file(
+            DagFileInfo(rel_path="_list_dags", bundle_name=bundle.name, bundle_path=bundle.path)
+        )
+
+        list_ps = DagFileProcessorProcess.start(
+            id=id,
+            path=bundle.path,
+            bundle_path=cast("Path", bundle.path),
+            dag_importer=bundle.dag_importer_class,
+            callbacks=[],
+            client=self.client,
+            logger=logger,
+            logger_filehandle=logger_filehandle,
+            target=list_file_entrypoint,
+        )
+        exit_code = list_ps.wait()
+        if exit_code is not None and exit_code != 0:
+            raise AirflowException("Failed to list files in bundle: %s", exit_code)
+        
+
+        rel_paths = [Path(x).relative_to(bundle.path) for x in list_ps.parsing_result.dag_files]
         self.log.info("Found %s files for bundle %s", len(rel_paths), bundle.name)
 
         return rel_paths
@@ -935,7 +958,7 @@ class DagFileProcessorManager(LoggingMixin):
         changed_recently = set()
         for file in files:
             try:
-                modified_timestamp = os.path.getmtime(file.absolute_path)
+                modified_timestamp = import_string(file.dag_importer)().modified_time(file.absolute_path) if file.dag_importer else 0
                 modified_datetime = datetime.fromtimestamp(modified_timestamp, tz=timezone.utc)
                 files_with_mtime[file] = modified_timestamp
                 last_time = self._file_stats[file].last_finish_time

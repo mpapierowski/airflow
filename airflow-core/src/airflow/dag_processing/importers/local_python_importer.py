@@ -148,6 +148,9 @@ class LocalPythonImporter(DagImporter, LoggingMixin):
 
     def dag_path_exists(self, dagpath: str) -> bool:
         return os.path.isfile(dagpath)
+    
+    def modified_time(self, dagpath:str):
+        return os.path.getmtime(dagpath)
 
     def _load_modules_from_file(self, filepath, safe_mode, import_errors):
         from airflow.sdk.definitions._internal.contextmanager import DagContext

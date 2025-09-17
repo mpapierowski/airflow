@@ -103,3 +103,16 @@ class DagImporter(LoggingMixin):
             bool: True if DAG path exists, False otherwise.
         """
         ...
+
+    def modified_time(self, dagpath: str) -> float:
+        """
+        Returns dagpath modification time estimation.
+
+        Args:
+            dagpath (str): Path to check.
+
+        Returns:
+            float: The modification time of the dagpath.
+        Raises FileNotFoundError: If path does not exist.
+        """
+        return 0.0

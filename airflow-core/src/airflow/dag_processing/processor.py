@@ -35,6 +35,7 @@ from airflow.callbacks.callback_requests import (
     TaskCallbackRequest,
 )
 from airflow.configuration import conf
+from airflow.dag_processing.importers.local_python_importer import LocalPythonImporter
 from airflow.models.dagbag import DagBag
 from airflow.sdk.execution_time.comms import (
     ConnectionResult,
@@ -107,6 +108,7 @@ class DagFileParsingResult(BaseModel):
     serialized_dags: list[LazyDeserializedDAG]
     warnings: list | None = None
     import_errors: dict[str, str] | None = None
+    dag_files: list[str] | None = None
     type: Literal["DagFileParsingResult"] = "DagFileParsingResult"
 
 
@@ -190,6 +192,33 @@ def _parse_file_entrypoint():
         comms_decoder.send(result)
 
 
+def list_file_entrypoint():
+    import structlog
+
+    from airflow.sdk.execution_time import comms, task_runner
+
+    # Parse DAG file, send JSON back up!
+    comms_decoder = comms.CommsDecoder[ToDagProcessor, ToManager](
+        body_decoder=TypeAdapter[ToDagProcessor](ToDagProcessor),
+    )
+
+    msg = comms_decoder._get_response()
+    if not isinstance(msg, DagFileParseRequest):
+        raise RuntimeError(f"Required first message to be a DagFileParseRequest, it was {msg}")
+
+    task_runner.SUPERVISOR_COMMS = comms_decoder
+    log = structlog.get_logger(logger_name="task")
+
+    # Put bundle root on sys.path if needed. This allows the dag bundle to add
+    # code in util modules to be shared between files within the same bundle.
+    if (bundle_root := os.fspath(msg.bundle_path)) not in sys.path:
+        sys.path.append(bundle_root)
+
+    result = _list_files(msg, log)
+    if result is not None:
+        comms_decoder.send(result)
+
+
 def _parse_file(msg: DagFileParseRequest, log: FilteringBoundLogger) -> DagFileParsingResult | None:
     # TODO: Set known_pool names on DagBag!
 
@@ -215,6 +244,15 @@ def _parse_file(msg: DagFileParseRequest, log: FilteringBoundLogger) -> DagFileP
         warnings=[],
     )
     return result
+
+
+def _list_files(msg: DagFileParseRequest, log: FilteringBoundLogger) -> DagFileParsingResult | None:
+    importer = import_string(msg.dag_importer)() if msg.dag_importer else LocalPythonImporter()
+    return DagFileParsingResult(
+        fileloc=msg.file,
+        serialized_dags=[],
+        dag_files=list(importer.list_paths(str(msg.bundle_path))))
+    
 
 
 def _serialize_dags(
@@ -578,4 +616,6 @@ class DagFileProcessorProcess(WatchedSubprocess):
         return not self._open_sockets
 
     def wait(self) -> int:
-        raise NotImplementedError(f"Don't call wait on {type(self).__name__} objects")
+        while self._exit_code is None:
+            self._service_subprocess(max_wait_time=10)
+        return self._exit_code

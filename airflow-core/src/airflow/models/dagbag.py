@@ -156,7 +156,7 @@ class DagBag(LoggingMixin):
     ):
         super().__init__()
         self.bundle_path = bundle_path
-        self.dag_importer = dag_importer or LocalPythonImporter()
+        self.dag_importer: DagImporter = dag_importer or LocalPythonImporter()
         include_examples = (
             include_examples
             if isinstance(include_examples, bool)
@@ -252,28 +252,29 @@ class DagBag(LoggingMixin):
         DagContext.autoregistered_dags.clear()
 
         self.captured_warnings.pop(filepath, None)
-        import_result = self.dag_importer.import_path(filepath, options=ImportOptions(skip_unchanged=only_if_updated))
-        captured_warnings = import_result.import_warnings.get(filepath)
-        if captured_warnings:
-            self.captured_warnings[filepath] = captured_warnings
-        relative_path = self._get_relative_fileloc(filepath)
-        import_errors = import_result.import_errors.get(filepath)
-        if import_errors:
-            self.import_errors[relative_path] = import_errors
+        import_results = self.dag_importer.import_path(filepath, options=ImportOptions(skip_unchanged=only_if_updated))
         found_dags = []
-        for dag in import_result.dags.values():
-            dag.relative_fileloc = relative_path
-            try:
-                dag.validate()
-                _validate_executor_fields(dag)
-                self.bag_dag(dag=dag)
-            except AirflowClusterPolicySkipDag:
-                pass
-            except Exception as e:
-                self.log.exception("Failed to bag_dag: %s", dag.fileloc)
-                self.import_errors[relative_path] = f"{type(e).__name__}: {e}"
-            else:
-                found_dags.append(dag)
+        for import_result in import_results:
+            captured_warnings = import_result.import_warnings.get(filepath)
+            if captured_warnings:
+                self.captured_warnings[filepath] = tuple(captured_warnings)
+            relative_path = self._get_relative_fileloc(filepath)
+            import_errors = import_result.import_errors.get(filepath)
+            if import_errors:
+                self.import_errors[relative_path] = import_errors
+            for dag in import_result.dags.values():
+                dag.relative_fileloc = relative_path
+                try:
+                    dag.validate()
+                    _validate_executor_fields(dag)
+                    self.bag_dag(dag=dag)
+                except AirflowClusterPolicySkipDag:
+                    pass
+                except Exception as e:
+                    self.log.exception("Failed to bag_dag: %s", dag.fileloc)
+                    self.import_errors[relative_path] = f"{type(e).__name__}: {e}"
+                else:
+                    found_dags.append(dag)
         return found_dags
 
     @property
@@ -519,7 +520,6 @@ class DagBag(LoggingMixin):
 
         if include_examples:
             from airflow import example_dags
-
             example_dag_folder = next(iter(example_dags.__path__))
 
             files_to_parse.extend(list_py_file_paths(example_dag_folder, safe_mode=safe_mode))

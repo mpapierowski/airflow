@@ -23,6 +23,7 @@ import os
 import signal
 import sys
 import traceback
+from typing import Generator
 import warnings
 import zipfile
 from datetime import datetime
@@ -30,7 +31,8 @@ from datetime import datetime
 
 from airflow import settings
 from airflow.configuration import conf
-from airflow.dag_processing.importers.dag_importer import DagImporter, DagsImportResult
+from airflow.dag_processing.importers.dag_importer import DagImporter, DagsImportResult, ImportOptions
+from airflow.exceptions import AirflowTaskTimeout
 from airflow.utils.docs import get_docs_url
 from airflow.utils.file import (
     correct_maybe_zipped,
@@ -95,21 +97,22 @@ class LocalPythonImporter(DagImporter, LoggingMixin):
         self.has_logged_skipped_files = False
 
 
-    def import_path(self, dagpath: str, options: ImportOptions | None = None):
+    def import_path(self, dagpath: str, options: ImportOptions | None = None) -> Generator[DagsImportResult, None, None]:
         from airflow.sdk.definitions._internal.contextmanager import DagContext
-
+        skipped_result = DagsImportResult(dags = {}, import_warnings = {}, import_errors = {}, skipped_paths=[dagpath])
         try:
-            skipped_result = DagsImportResult(dags = {}, import_warnings = {}, import_errors = {}, skipped_paths=[dagpath])
             file_last_changed_on_disk = datetime.fromtimestamp(os.path.getmtime(dagpath))
             if (
-                options.skip_unchanged
+                options and options.skip_unchanged
                 and dagpath in self.file_last_changed
                 and file_last_changed_on_disk == self.file_last_changed[dagpath]
             ):
-                return skipped_result
+                yield skipped_result
+                return
         except Exception as e:
             self.log.exception(e)
-            return skipped_result
+            yield skipped_result
+            return
         
         self.file_last_changed[dagpath] = file_last_changed_on_disk
 
@@ -135,15 +138,14 @@ class LocalPythonImporter(DagImporter, LoggingMixin):
 
         found_dags = self._process_modules(mods)
 
-        return DagsImportResult(
+        yield DagsImportResult(
             dags = {d.dag_id:d for d in found_dags},
             import_warnings = formatted_captured_warnings,
             import_errors = import_errors,
         )
 
     def list_paths(self, subpath: str):
-        subpath = correct_maybe_zipped(str(subpath))
-
+        subpath = str(correct_maybe_zipped(subpath))
         return list_py_file_paths(subpath, safe_mode=self.safe_mode)
 
     def dag_path_exists(self, dagpath: str) -> bool:

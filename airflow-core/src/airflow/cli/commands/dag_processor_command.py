@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import logging
+import subprocess
 from typing import Any
 
 from airflow.cli.commands.daemon_utils import run_command_with_daemon_option
@@ -48,11 +49,18 @@ def _create_dag_processor_job_runner(args: Any) -> DagProcessorJobRunner:
 @providers_configuration_loaded
 def dag_processor(args):
     """Start Airflow Dag Processor Job."""
-    job_runner = _create_dag_processor_job_runner(args)
+    run_args = [
+        "fastapi",
+        "dev",
+        "airflow-core/src/airflow/dag_processing/event_based_processor.py",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8092",
+    ]
 
-    run_command_with_daemon_option(
-        args=args,
-        process_name="dag-processor",
-        callback=lambda: run_job(job=job_runner.job, execute_callable=job_runner._execute),
-        should_setup_logging=True,
-    )
+    with subprocess.Popen(
+        run_args,
+        close_fds=True,
+    ) as process:
+        process.wait()

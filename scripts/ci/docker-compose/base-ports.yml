@@ -21,3 +21,5 @@ services:
       - "${SSH_PORT}:22"
       - "${WEB_HOST_PORT}:8080"
       - "${FLOWER_HOST_PORT}:5555"
+      - "8092:8092" # DAG processor API
+
